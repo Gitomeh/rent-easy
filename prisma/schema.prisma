@@ -1,0 +1,447 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  SECRETARY
+  LANDLORD
+  TENANT
+}
+
+enum PropertyType {
+  BEDSITTER
+  APARTMENT
+  FLAT
+  HOUSE
+  MAISONETTE
+  COMMERCIAL
+  OTHER
+}
+
+enum PropertyStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+  ARCHIVED
+}
+
+enum UnitStatus {
+  VACANT
+  RESERVED
+  OCCUPIED
+  MAINTENANCE
+  UNAVAILABLE
+}
+
+enum ApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+enum ApprovalStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+  ARCHIVED
+}
+
+enum PaymentType {
+  RENT
+  DEPOSIT
+  LATE_FEE
+  OTHER
+}
+
+enum PaymentMethod {
+  MPESA
+  BANK
+  CASH
+  CARD
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  REVERSED
+  CANCELLED
+}
+
+enum RentChargeStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  WAIVED
+  CANCELLED
+}
+
+enum DepositStatus {
+  PENDING
+  PARTIALLY_PAID
+  HELD
+  REFUNDED
+  ADJUSTED
+}
+
+enum ExpenseCategory {
+  REPAIR
+  MAINTENANCE
+  UTILITIES
+  CLEANING
+  SECURITY
+  MANAGEMENT
+  OTHER
+}
+
+enum ExpenseStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum TenancyStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  TERMINATED
+  SUSPENDED
+}
+
+enum StatementStatus {
+  DRAFT
+  GENERATED
+  REVIEWED
+  APPROVED
+  FINALIZED
+}
+
+model User {
+  id            String   @id @default(uuid())
+  name          String
+  email         String   @unique
+  phone         String   @unique
+  passwordHash  String
+  role          Role     @default(TENANT)
+  isActive      Boolean  @default(true)
+  emailVerified Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastLoginAt   DateTime?
+
+  landlordProfile LandlordProfile?
+  tenantProfile   TenantProfile?
+  auditLogs       AuditLog[]
+
+  @@index([email])
+  @@index([phone])
+  @@index([role])
+}
+
+model LandlordProfile {
+  id                 String         @id @default(uuid())
+  userId             String         @unique
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idNumber           String?
+  idDocumentUrl      String?
+  profileImageUrl    String?
+  verificationStatus ApprovalStatus @default(PENDING_REVIEW)
+  verificationNotes  String?
+  approvedBy         String?
+  approvedAt         DateTime?
+  rejectedBy         String?
+  rejectedAt         DateTime?
+  rejectionReason    String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  properties     Property[]
+  expenses       Expense[]
+  statements     Statement[]
+  tenancies      Tenancy[]
+}
+
+model TenantProfile {
+  id                 String         @id @default(uuid())
+  userId             String         @unique
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idNumber           String?
+  idDocumentUrl      String?
+  profileImageUrl    String?
+  emergencyContact   String?
+  emergencyPhone     String?
+  verificationStatus ApprovalStatus @default(PENDING_REVIEW)
+  verificationNotes  String?
+  approvedBy         String?
+  approvedAt         DateTime?
+  rejectedBy         String?
+  rejectedAt         DateTime?
+  rejectionReason    String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  rentalApplications RentalApplication[]
+  tenancies          Tenancy[]
+  payments           Payment[]
+}
+
+model Property {
+  id              String        @id @default(uuid())
+  landlordId      String
+  landlord        LandlordProfile @relation(fields: [landlordId], references: [id], onDelete: Cascade)
+  name            String
+  description     String
+  propertyType    PropertyType
+  address         String
+  town            String
+  county          String
+  location        String?
+  status          PropertyStatus @default(DRAFT)
+  rejectionReason String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  images            PropertyImage[]
+  units             Unit[]
+  rentalApplications RentalApplication[]
+
+  @@index([landlordId])
+  @@index([status])
+  @@index([county])
+}
+
+model PropertyImage {
+  id        String   @id @default(uuid())
+  propertyId String
+  property  Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  url       String
+  altText   String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([propertyId])
+}
+
+model Unit {
+  id          String     @id @default(uuid())
+  propertyId  String
+  property    Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  unitNumber  String
+  bedrooms    Int
+  bathrooms   Int
+  monthlyRent Int
+  deposit     Int
+  status      UnitStatus @default(VACANT)
+  description String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  rentalApplications RentalApplication[]
+
+  @@index([propertyId])
+  @@index([status])
+}
+
+model RentalApplication {
+  id             String          @id @default(uuid())
+  tenantId       String
+  tenant         TenantProfile   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  propertyId     String
+  property       Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  unitId         String?
+  unit           Unit?           @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  status         ApplicationStatus @default(DRAFT)
+  applicantInformation Json?
+  moveInDate     DateTime?
+  occupants      Int?
+  submittedAt    DateTime?
+  updatedAt      DateTime        @updatedAt
+  createdAt      DateTime        @default(now())
+
+  @@index([tenantId])
+  @@index([propertyId])
+  @@index([status])
+}
+
+model Tenancy {
+  id             String        @id @default(uuid())
+  tenantId       String
+  tenant         TenantProfile @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  landlordId     String
+  landlord       LandlordProfile @relation(fields: [landlordId], references: [id], onDelete: Cascade)
+  propertyId     String
+  unitId         String
+  applicationId  String?
+  startDate      DateTime
+  endDate        DateTime?
+  monthlyRent    Int
+  depositAmount  Int
+  status         TenancyStatus @default(PENDING)
+  approvedBy     String?
+  approvedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  rentCharges RentCharge[]
+  payments     Payment[]
+
+  @@index([tenantId])
+  @@index([landlordId])
+  @@index([propertyId])
+  @@index([unitId])
+  @@index([status])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entityType String
+  entityId   String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([createdAt])
+}
+
+model RentCharge {
+  id            String          @id @default(uuid())
+  tenancyId     String
+  tenancy       Tenancy         @relation(fields: [tenancyId], references: [id], onDelete: Cascade)
+  amount        Int
+  dueDate       DateTime
+  billingPeriod String
+  status        RentChargeStatus @default(PENDING)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  payments Payment[]
+
+  @@index([tenancyId])
+  @@index([dueDate])
+  @@index([status])
+}
+
+model Payment {
+  id                  String     @id @default(uuid())
+  tenantId            String
+  tenant              TenantProfile @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenancyId           String
+  tenancy             Tenancy    @relation(fields: [tenancyId], references: [id], onDelete: Cascade)
+  propertyId          String
+  unitId              String
+  amount              Int
+  paymentType         PaymentType @default(RENT)
+  paymentMethod       PaymentMethod @default(OTHER)
+  transactionReference String?
+  paymentDate         DateTime
+  status              PaymentStatus @default(PENDING)
+  recordedBy          String?
+  mpesaTransactionId  String?
+  mpesaPhoneNumber    String?
+  merchantReference   String?
+  checkoutRequestId   String?
+  receiptNumber       String     @unique
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  rentCharges RentCharge[]
+
+  @@index([tenantId])
+  @@index([tenancyId])
+  @@index([propertyId])
+  @@index([status])
+  @@index([paymentDate])
+  @@index([receiptNumber])
+}
+
+model Expense {
+  id           String          @id @default(uuid())
+  landlordId   String
+  landlord     LandlordProfile @relation(fields: [landlordId], references: [id], onDelete: Cascade)
+  propertyId   String?
+  unitId       String?
+  category     ExpenseCategory
+  description  String
+  amount       Int
+  expenseDate  DateTime
+  status       ExpenseStatus @default(PENDING_APPROVAL)
+  approvedBy   String?
+  approvedAt   DateTime?
+  rejectedBy   String?
+  rejectedAt   DateTime?
+  rejectionReason String?
+  createdBy    String
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([landlordId])
+  @@index([propertyId])
+  @@index([category])
+  @@index([status])
+  @@index([expenseDate])
+}
+
+model ManagementFeeConfiguration {
+  id           String   @id @default(uuid())
+  percentage    Float
+  fixedAmount   Int?
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  active       Boolean  @default(true)
+  createdBy    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([active])
+  @@index([effectiveFrom])
+}
+
+model Statement {
+  id            String    @id @default(uuid())
+  landlordId    String
+  landlord      LandlordProfile @relation(fields: [landlordId], references: [id], onDelete: Cascade)
+  periodStart   DateTime
+  periodEnd     DateTime
+  openingBalance Int       @default(0)
+  rentCollected Int       @default(0)
+  otherIncome   Int       @default(0)
+  expenses      Int       @default(0)
+  managementFees Int       @default(0)
+  adjustments   Int       @default(0)
+  netPayable    Int       @default(0)
+  status        StatementStatus @default(DRAFT)
+  generatedAt   DateTime
+  approvedBy    String?
+  approvedAt    DateTime?
+  finalizedBy   String?
+  finalizedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([landlordId])
+  @@index([periodStart])
+  @@index([status])
+}
